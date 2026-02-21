@@ -4,7 +4,7 @@
 400 INVALID_ARGUMENT: Function call is missing a thought_signature in functionCall parts.
 ```
 
-![alt text](image.png)
+![alt text](https://raw.githubusercontent.com/john-raymon/gemini-thought-signature-proxy/main/image.png)
 
 ## What this is and why I built it (The Simple Version)
 
@@ -64,7 +64,7 @@ Make sure your file looks like this (pointing to `localhost:3000` instead of Goo
 ### 3. Add your API Key in VS Code
 
 Just putting it in the JSON file isn't enough! You have to tell VS Code what your actual Google Gemini API key is.
-*(You can get your Gemini API key here: https://aistudio.google.com/api-keys)*
+_(You can get your Gemini API key here: https://aistudio.google.com/api-keys)_
 
 1. Open the Command Palette (`Cmd+Shift+P`).
 2. Search for and select **`Chat: Manage Language Models`**.
