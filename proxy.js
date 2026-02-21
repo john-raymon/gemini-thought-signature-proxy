@@ -231,8 +231,8 @@ app.listen(PORT, () => {
   console.log(`  To verify the proxy is working, you can run this curl command:`);
   console.log(`  (We do not store or log your API key)`);
   console.log("");
-  console.log(`  curl http://localhost:${PORT}/v1beta/models \\`);
-  console.log(`    -H "Authorization: Bearer YOUR_API_KEY"`);
+  console.log(`  curl -s http://localhost:${PORT}/v1beta/openai/models \\`);
+  console.log(`    -H "Authorization: Bearer YOUR_GOOGLE_AI_STUDIO_GEMINI_API_KEY"`);
   console.log("");
   console.log(`  Make sure your chatLanguageModels.json is configured like this:`);
   console.log(`  {`);
