@@ -1,0 +1,5 @@
+node_modules
+.DS_Store
+tweets.md
+reddit-post.md
+github-issue.md
