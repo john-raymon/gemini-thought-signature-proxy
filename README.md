@@ -96,9 +96,9 @@ Before forwarding any request, the proxy walks the `messages` array, finds every
 
 VS Code constructs the final URL by appending `v1/chat/completions` to the base URL in `chatLanguageModels.json`. With a base of `http://localhost:3000/v1beta/openai/`, VS Code sends requests to `/v1beta/openai/v1/chat/completions`. The Google endpoint is `/v1beta/openai/chat/completions` (no extra `/v1`). The proxy intercepts VS Code's path and rewrites the upstream target accordingly.
 
-### Note on Models
+### Note on Models (Privacy & Safety)
 
-The bypass only activates for `models/gemini-3.1-pro-preview-customtools`. Other models pass through untouched.
+**This proxy is strictly scoped.** The bypass logic _only_ activates for the `models/gemini-3.1-pro-preview-customtools` model. If you use any other model through this proxy, the request passes through 100% untouched. We do not modify, log, or store your messages or API keys.
 
 ### When this might stop working
 
