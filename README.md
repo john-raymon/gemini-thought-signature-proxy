@@ -4,6 +4,8 @@
 400 INVALID_ARGUMENT: Function call is missing a thought_signature in functionCall parts.
 ```
 
+![alt text](image.png)
+
 ## What this is and why I built it (The Simple Version)
 
 I wanted to use the new **Gemini 3.1 Pro Preview** model directly inside **VS Code Insiders** using GitHub Copilot's new "Bring Your Own Key" (BYOK) feature.
