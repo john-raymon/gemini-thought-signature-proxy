@@ -35,7 +35,7 @@ You need to edit your `chatLanguageModels.json` file.
 **How to find it:**
 
 - Press `Cmd+Shift+P` (or `Ctrl+Shift+P` on Windows/Linux)
-- Search for `Open User Settings (JSON)`
+- Search for **`Chat: Open Language Models (JSON)`**
 - Or find it directly at `~/Library/Application Support/Code - Insiders/User/chatLanguageModels.json` on macOS.
 
 Make sure your file looks like this (pointing to `localhost:3000` instead of Google):
