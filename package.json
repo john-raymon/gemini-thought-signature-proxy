@@ -1,6 +1,6 @@
 {
   "name": "gemini-thought-signature-proxy",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A proxy to bypass the Gemini 3.1 Pro thought_signature 400 error in VS Code Copilot BYOK",
   "main": "proxy.js",
   "type": "module",
