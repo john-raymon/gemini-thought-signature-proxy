@@ -4,41 +4,98 @@
 400 INVALID_ARGUMENT: Function call is missing a thought_signature in functionCall parts.
 ```
 
-![alt text](https://raw.githubusercontent.com/john-raymon/gemini-thought-signature-proxy/main/image.png)
+A tiny local proxy that sits between your OpenAI-protocol client and Google's OpenAI-compatible Gemini endpoint, preserving the `thought_signature` fields that Gemini 3.x models require for tool calling — so multi-turn agent loops stop dying with the 400 above.
 
-## What this is and why I built it (The Simple Version)
+## The problem
 
-I wanted to use the new **Gemini 3.1 Pro Preview** model directly inside **VS Code Insiders** using GitHub Copilot's new "Bring Your Own Key" (BYOK) feature.
+Gemini 3.x models (3.8 Flash, 3.1 Pro, …) sign their reasoning before emitting a tool call. Google's OpenAI-compatible endpoint returns that signature inside each tool call at a non-standard location:
 
-I set it up using the "OpenAI Compatible" (customoai) vendor option. It worked great for normal chatting. But the moment I tried to use **Agent mode** (where the AI can actually run tools, read files, and do things), it broke immediately with the `thought_signature` 400 error above.
+```json
+"extra_content": { "google": { "thought_signature": "..." } }
+```
 
-**Why?** Gemini 3.1 does a "thinking" step before it uses a tool. Google attaches a special cryptographic signature to that thought. When VS Code replies back to Google, Google expects to see that signature again. But VS Code is built for OpenAI, not Google, so it just deletes that signature because it doesn't recognize it. Google sees the missing signature and throws a 400 error.
+Standard OpenAI clients — the Vercel AI SDK (Open Design), VS Code Copilot BYOK, the OpenAI Python/Node SDKs — deserialize the response into their own types and **strip non-standard fields**. When the tool result goes back on the next turn, the history no longer contains the signature, and Google rejects the request with the 400 error.
 
-**The Fix:** This package is a tiny local proxy server. It sits between VS Code and Google. Right before VS Code sends a message to Google, this proxy sneaks in and injects a special "bypass code" (`skip_thought_signature_validator`) that Google officially allows. This tricks Google into accepting the request without the signature.
+One more wrinkle: for **parallel tool calls**, Gemini attaches the signature to the **first** tool-call part only. The sibling calls arrive unsigned and must be returned unsigned.
 
-## Quick Start
+## How v2 fixes it
 
-### 1. Run the proxy locally
+The proxy keeps an in-memory cache (`tool_call.id → thought_signature`) and applies a strict three-state rule on every turn:
 
-Open your terminal and run:
+| Cache state | Meaning | Outbound action |
+|---|---|---|
+| `string` | Real signature captured from Google | Inject it back into `extra_content.google.thought_signature` |
+| `null` | Known **unsigned parallel sibling** | Forward **exactly as received** — unsigned |
+| miss | Never seen (restart, eviction, handoff) | Inject Google's documented bypass sentinel `skip_thought_signature_validator` — **only** for models matching the model filter |
+
+Extraction is model-agnostic (harmless no-op for non-Gemini traffic); only the sentinel fallback is gated — by default to any model id matching `/gemini/i`, overridable with an exact list via `PATCHED_MODELS`.
+
+```text
+[ Client (Open Design / Vercel AI SDK / VS Code / SDKs) ]
+                        |  chat/completions
+                        v
+        [ gemini-thought-signature-proxy ]
+         1. scan assistant tool_calls in history
+         2. inject cached sig / leave sibling bare / sentinel
+         3. strip hop-by-hop headers, recompute framing
+                        v
+        [ Google generativelanguage.googleapis.com ]
+                        |  response (SSE or JSON)
+                        v
+        [ gemini-thought-signature-proxy ]
+         1. bytes forwarded to client VERBATIM
+         2. side-channel parser extracts signatures
+         3. commit to cache at [DONE] (aborted turn = discard)
+                        v
+                     [ Client ]
+```
+
+## Quick start
+
+No install needed:
 
 ```bash
+# preferred
+pnpm dlx gemini-thought-signature-proxy
+
+# or
 npx gemini-thought-signature-proxy
 ```
 
-_(When it starts, it will print out a `curl` command you can use to test that it's working. We do not store or log your API key!)_
+The proxy listens on `http://127.0.0.1:3000` and prints its upstream, model filter, and cache settings at boot. `GET /healthz` returns `{"status":"ok"}`.
 
-### 2. Configure VS Code Insiders
+## Client configuration
 
-You need to edit your `chatLanguageModels.json` file.
+### Open Design / Vercel AI SDK
 
-**How to find it:**
+Point the provider's base URL at the proxy — the SDK appends `/chat/completions` itself:
 
-- Press `Cmd+Shift+P` (or `Ctrl+Shift+P` on Windows/Linux)
-- Search for **`Chat: Open Language Models (JSON)`**
-- Or find it directly at `~/Library/Application Support/Code - Insiders/User/chatLanguageModels.json` on macOS.
+```typescript
+import { createOpenAI } from "@ai-sdk/openai";
 
-Make sure your file looks like this (pointing to `localhost:3000` instead of Google):
+const gemini = createOpenAI({
+  baseURL: "http://localhost:3000/v1beta/openai",
+  apiKey: process.env.GEMINI_API_KEY,
+});
+
+const model = gemini("gemini-3.8-flash");
+```
+
+### OpenAI Python SDK
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:3000/v1beta/openai",
+    api_key=os.environ["GEMINI_API_KEY"],
+)
+```
+
+### VS Code Copilot BYOK
+
+VS Code appends `v1/chat/completions` to the configured base URL, producing `/v1beta/openai/v1/chat/completions`. The proxy mounts **both** that path and the plain `/v1beta/openai/chat/completions`, rewriting to Google's real upstream path either way — configure exactly as before:
 
 ```json
 [
@@ -48,8 +105,8 @@ Make sure your file looks like this (pointing to `localhost:3000` instead of Goo
     "apiKey": "",
     "models": [
       {
-        "id": "models/gemini-3.1-pro-preview-customtools",
-        "name": "Gemini 3.1 Pro Preview Custom Tools",
+        "id": "gemini-3.8-flash",
+        "name": "Gemini 3.8 Flash",
         "url": "http://localhost:3000/v1beta/openai/",
         "toolCalling": true,
         "vision": true,
@@ -61,49 +118,57 @@ Make sure your file looks like this (pointing to `localhost:3000` instead of Goo
 ]
 ```
 
-### 3. Add your API Key in VS Code
+Then set your API key via **`Chat: Manage Language Models`** in the command palette.
 
-Just putting it in the JSON file isn't enough! You have to tell VS Code what your actual Google Gemini API key is.
-_(You can get your Gemini API key here: https://aistudio.google.com/api-keys)_
 
-1. Open the Command Palette (`Cmd+Shift+P`).
-2. Search for and select **`Chat: Manage Language Models`**.
-3. You should see the model you just added (`Gemini 3.1 Pro Preview Custom Tools`). Click on it.
-4. If it asks for a name, just hit Enter.
-5. An input box will appear asking for the API key. **Paste your Google Gemini API key here and hit Enter.**
+## Configuration
 
-That's it! You can now use Gemini 3.1 Pro in Agent mode without the 400 error.
+All configuration is via environment variables:
 
----
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | Port the proxy listens on |
+| `HOST` | `127.0.0.1` | Bind address. Loopback by default — do not expose this proxy to a network |
+| `UPSTREAM_BASE_URL` | `https://generativelanguage.googleapis.com` | Upstream Gemini endpoint (override for testing) |
+| `PATCHED_MODELS` | *(unset)* | Comma-separated exact model IDs eligible for the sentinel fallback (e.g. `gemini-3.8-flash,gemini-3.1-pro`). A `models/` prefix is tolerated on either side. When unset, any id matching `/gemini/i` is eligible |
+| `CACHE_MAX_ENTRIES` | `5000` | Max cached signatures (LRU eviction beyond this) |
+| `CACHE_TTL_MS` | `3600000` | Signature time-to-live in milliseconds (1 hour) |
 
-## Technical Details
+Real cached signatures are injected for **any** model regardless of this filter — the filter only gates the sentinel fallback on cache misses.
 
-### The Failure Flow
+## Technical details
 
-1. VS Code → Google (round 1, signature returned)
-2. VS Code strips signature
-3. VS Code → Google (round 2, 400 error)
+- **Streaming integrity:** SSE responses pass through a `SignatureTap` transform that forwards every byte to the client unmodified (proper backpressure, multi-byte UTF-8 safe) while a side-channel parser extracts signatures. Zero added latency; token-by-token streaming is unaffected.
+- **Commit semantics:** signatures commit to the cache the moment `data: [DONE]` arrives — clients that disconnect immediately after (as the Vercel AI SDK does) still get their signatures cached. A stream that ends **without** `[DONE]` (aborted turn, upstream error mid-stream) discards everything it saw, so speculative partial state can never poison the cache.
+- **Non-stream responses:** JSON chat completions are buffered, signatures extracted, and the **original upstream bytes** are forwarded unmodified (never re-serialized).
+- **Header hygiene:** hop-by-hop headers (`host`, `content-length`, `connection`, …) are stripped and recomputed; `accept-encoding` is forced to `identity` upstream so the SSE parser never sees compressed bytes; upstream errors (400/429/…) are forwarded verbatim — never masked by a proxy 500.
+- **Cache:** in-memory LRU with fixed TTL and a background sweep. Keys are `tool_call.id`s only.
 
-### How it works under the hood
+## Privacy
 
-Before forwarding any request, the proxy walks the `messages` array, finds every `role: "assistant"` message with `tool_calls`, and injects a stateless bypass sentinel:
+- Binds to `127.0.0.1` by default; the proxy is only reachable from your machine.
+- API keys are forwarded to Google and **never logged or stored**.
+- Message contents are never logged; the only persisted state is `tool_call.id → signature` in memory (gone on restart).
+- Logs are limited to routes, models, and extraction counts.
 
-```json
-"extra_content": { "google": { "thought_signature": "skip_thought_signature_validator" } }
+## Development
+
+```bash
+pnpm install        # pnpm only — no npm/yarn
+pnpm typecheck      # tsc --noEmit
+pnpm build          # emit dist/ (cli.js marked executable)
+pnpm test           # vitest: unit + mock-upstream integration suites
+pnpm dev            # run from source via tsx
 ```
 
-### Path routing note
+Repo layout: `src/config.ts` (env), `src/cache.ts` (LRU+TTL store), `src/inject.ts` (outbound injection), `src/extract.ts` (JSON + SSE extraction), `src/stream.ts` (SignatureTap), `src/routes/` (chat + passthrough + header utils), `src/proxy.ts` (app factory), `src/cli.ts` (entrypoint).
 
-VS Code constructs the final URL by appending `v1/chat/completions` to the base URL in `chatLanguageModels.json`. With a base of `http://localhost:3000/v1beta/openai/`, VS Code sends requests to `/v1beta/openai/v1/chat/completions`. The Google endpoint is `/v1beta/openai/chat/completions` (no extra `/v1`). The proxy intercepts VS Code's path and rewrites the upstream target accordingly.
+## When this might stop working
 
-### Note on Models (Privacy & Safety)
+If Google changes sentinel semantics, the wire location of `thought_signature`, or parallel-call validation rules after GA, the extractor/injector logic will need updating. The defensive bits (dual wire-path reads, sentinel fallback) are designed to degrade gracefully rather than hard-fail.
 
-**This proxy is strictly scoped.** The bypass logic _only_ activates for the `models/gemini-3.1-pro-preview-customtools` model. If you use any other model through this proxy, the request passes through 100% untouched. We do not modify, log, or store your messages or API keys.
-
-### When this might stop working
-
-If Google changes enforcement post-GA, the `PATCHED_MODEL_ID` and `BYPASS_SIGNATURE` constants may need to be updated.
-
-### References
+## References
 
 - [Google's official thought signatures docs](https://ai.google.dev/gemini-api/docs/thought-signatures)
+- [Gemini OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai)
+- [Vercel AI SDK](https://sdk.vercel.ai/)

@@ -1,5 +1,7 @@
 # Implementation Plan
 
+**Status: Completed (v2.0.0)** — all 7 chunks landed, verified, and committed. Kept as an architectural record.
+
 ## Overview
 
 Upgrade the proxy from a stateless sentinel-injector to a stateful signature-preserving proxy, migrated to modern TypeScript/ESM. It sits between OpenAI-protocol clients (Open Design / Vercel AI SDK, VS Code Copilot BYOK) and Google's OpenAI-compatible Gemini endpoint, caching real `thought_signature` values from Google responses (SSE and JSON) and re-injecting them into outbound request history.

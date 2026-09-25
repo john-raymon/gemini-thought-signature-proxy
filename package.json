@@ -45,7 +45,7 @@
     "400",
     "INVALID_ARGUMENT"
   ],
-  "author": "",
+  "author": "john-raymon",
   "dependencies": {
     "express": "^4.21.2"
   },
