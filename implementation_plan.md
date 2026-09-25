@@ -78,14 +78,16 @@ Config: `HEARTBEAT_INTERVAL_MS` derived from `process.env.SSE_HEARTBEAT_INTERVAL
 
 ## Testing
 
-- **New `tests/ssePrelude.test.ts`:** boot frame is one `data: ` line + `\n\n`; JSON parses with chunk shape, role delta, no content; two calls yield different ids; model quoting safe (model containing `"` stays valid JSON); error frame passes through nested Google `{error:{message}}` with `[Google 400]` prefix vs wraps plain text (truncated at 500); retryAfter included when provided; heartbeat interval default 2000 vs env override.
-- **Updated integration assertions (S1, S5, S7, S7b):** `splitBootFrameAndRemainder(raw)` splits at first `\n\n`; assert boot frame matches `/^data: \{"id":"chatcmpl-[a-f0-9-]+","object":"chat\.completion\.chunk","created":\d+,/` and remainder `=== renderSse(upstreamFrames)` byte-for-byte (byte-verbatim guarantee preserved for all real upstream bytes).
-- **New timing test (core proof):** upstream `headersDelayMs: 3000`; client reader measures first data chunk at <500ms; that chunk is the boot frame; remainder matches upstream bytes; cache still commits at `[DONE]`.
-- **New error-after-flush test:** upstream 400 with Google error JSON; stream:true client gets 200; frame 1 = boot; frame 2 parses to `error.code === 400` containing upstream message; stream ends without `[DONE]`.
-- **New anomaly test:** upstream 200 `application/json` on stream:true -> 502 `upstream_error` frame.
-- **New early-disconnect test:** `headersDelayMs: 1500`, client aborts at ~300ms -> upstream fetch aborted, no unhandled server errors, heartbeat timer cleared (suite exits clean, no leaked handles).
-- **Regression:** existing 124 tests; S3 (stream:false JSON) and S4 (error fidelity) assertions unchanged and must pass as-is.
-- **Gates:** `pnpm typecheck`, `pnpm test`, `pnpm build`, live boot smoke unaffected.
+- **New `tests/ssePrelude.test.ts` (landed in Chunk 1):** boot frame framing/shape/role-only-delta/uuid-uniqueness/model escaping + unknown fallbacks; error frame nested-Google passthrough with `[Google <code>]` prefix, non-scalar-code guard, raw-text truncation at 500 with dangling-surrogate strip, empty/whitespace fallback, retryAfter presence rules, no `[DONE]`; heartbeat interval default 2000, floor 500, env override, float flooring.
+- **Updated integration assertions (S1, S7, S7b; landed in Chunk 2):** `splitBootFrameAndRemainder(raw)` splits at the first newline-newline boundary, validates boot frame shape, and asserts the remainder (heartbeat-stripped) equals `renderSse(upstreamFrames)` byte-for-byte — the byte-verbatim guarantee holds for all real upstream bytes. S5/S6 unchanged (cache-state assertions only).
+- **`stream:false` realignment:** `chatBody` gained a `stream` param. Tests whose mock responds with JSON (S2, S4, S8, S10, and the JSON follow-ups in S1/S5/S6) now post `stream: false` — streaming requests against a JSON-speaking upstream correctly hit the anomaly path instead. S4 keeps verbatim status/body/retry-after assertions for non-stream requests.
+- **New S11 — timing (core proof):** upstream `headersDelayMs: 3000` with heartbeat stubbed to 500ms; first client chunk arrives in <500ms and is the boot frame; heartbeat frames observed on the wire; remainder byte-equals upstream after stripping; cache commits at `[DONE]`.
+- **New S12 — error-after-flush:** upstream 400/429 with Google error JSON; stream:true client gets 200; boot frame first, then an error frame with `code` matching the upstream status, `[Google <code>]` message, and retryAfter from the upstream header; stream ends without `[DONE]`.
+- **New S13 — anomaly:** upstream 200 `application/json` on stream:true → 502 `upstream_error` frame, no fabricated chunks.
+- **New S14 — early disconnect:** `headersDelayMs: 1500`, client aborts at ~300ms → exactly one upstream request recorded, mock survives the dead socket, proxy serves a follow-up request cleanly.
+- **New S15 — heartbeat behavior:** stub 500ms + `headersDelayMs: 1200` → client body contains `: heartbeat` comment frames before upstream bytes; remainder still byte-verbatim after stripping. Suite-wide deterministic stub: `SSE_HEARTBEAT_INTERVAL_MS=60000`.
+- **Regression:** all 145 pre-v2.1.0 tests green; S3 (stream:false JSON) byte-exact forwarding untouched.
+- **Gates:** `pnpm typecheck`, `pnpm test`, `pnpm build` — green (151 tests). Live verification against the Open Design retry loop pending with the user.
 
 ## Implementation Order
 

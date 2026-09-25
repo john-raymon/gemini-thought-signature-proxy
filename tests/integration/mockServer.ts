@@ -32,6 +32,8 @@ export interface SseOptions {
   sliceBytes?: number;
   /** setTimeout delay between writes (default: setImmediate yield). */
   delayMs?: number;
+  /** Delay BEFORE response headers are written (simulates slow thinking). */
+  headersDelayMs?: number;
   /** Destroy the socket after writing this many bytes (no [DONE]). */
   abortAfterBytes?: number;
 }
@@ -69,6 +71,12 @@ export function respondSse(opts: SseOptions): ChatResponder {
     } else {
       slices.push(full);
     }
+
+    if (opts.headersDelayMs !== undefined && opts.headersDelayMs > 0) {
+      await sleep(opts.headersDelayMs);
+    }
+    // The client may have disconnected while we sat on headersDelayMs.
+    if (res.destroyed || res.writableEnded) return;
 
     res.writeHead(200, {
       "content-type": "text/event-stream",
