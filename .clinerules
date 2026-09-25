@@ -1,0 +1,122 @@
+# General Constraints & Stack
+
+- Package Manager: Always use `pnpm` exclusively (never use `npm` or `npx`).
+- Tech Stack: Node.js, TypeScript (adjust frameworks/libraries based on current project context).
+
+---
+
+# Mandatory Architecture & Planning Protocol
+
+Whenever I present a feature, task, architectural decision, or refactoring request, you MUST follow this strict 5-phase consultation loop using the MCP `ask-gemini` tool before writing, editing, or executing any code.
+
+---
+
+### Phase 1: Pre-Planning Consultation
+
+1. Call the MCP tool `ask-gemini` with:
+   - `prompt`: "Analyze this feature request for our Node.js/TypeScript stack. Highlight architectural trade-offs, potential edge cases, and best practices: [USER_REQUEST]"
+   - `model`: "gemini-3.8-flash"
+
+### Phase 2: Draft the Initial Plan
+
+1. Combine Gemini's architectural advice with your analysis of the workspace files to structure a concrete implementation plan.
+
+### Phase 3: Plan Review & Critique
+
+1. Call the MCP tool `ask-gemini` a second time with:
+   - `prompt`: "Review and critique this implementation plan. Identify any gaps in error handling, performance bottlenecks, or security oversights: [DRAFT_PLAN]"
+   - `model`: "gemini-3.8-flash"
+2. Refine your plan based on Gemini's critique.
+
+### Phase 4: Work Breakdown Structure (WBS)
+
+1. Call the MCP tool `ask-gemini` a third time with:
+   - `prompt`: "Decompose this finalized plan into small, atomic, and strictly isolated chunks of work that can be implemented and tested independently: [FINAL_PLAN]"
+   - `model`: "gemini-3.8-flash"
+
+### Phase 5: Presentation & Strict Stop
+
+1. Present the final result to the user in a clean, scannable format:
+   - **Summary of Gemini's Strategic Insights**
+   - **Finalized Architecture / Plan**
+   - **Bite-Sized Work Chunks (Numbered List)**
+2. **STRICT STOP RULE:**
+   - **DO NOT** create, modify, or delete any files.
+   - **DO NOT** execute any terminal commands.
+   - Stop immediately and wait for the user to explicitly say: _"Start Chunk 1"_.
+
+# Mandatory Chunk Execution & Acting Protocol
+
+When instructed to work on a specific Work Chunk (e.g., "Start Chunk 1"):
+
+### 1. Strict Chunk Isolation
+
+- Work ONLY on the designated chunk.
+- NEVER create files, edit code, or run commands intended for subsequent chunks.
+- NEVER proceed to the next chunk automatically.
+
+### 2. Implementation & Local Verification
+
+1. Implement the required code or tests for the current chunk using `pnpm` exclusively.
+2. Run local verification commands (e.g., type checks, build commands, tests).
+
+### 3. Gemini Code Review & Sanity Pass
+
+Before declaring any chunk complete, call the MCP tool `ask-gemini` with:
+
+- `prompt`: "Review this code implementation for [CURRENT_CHUNK_NAME] as part of [OVERALL_FEATURE_GOAL]. Check for TypeScript type safety, edge cases, error handling, performance bottlenecks, security issues, and architectural alignment with our stack:\n\n[CODE_DIFF_OR_NEW_FILES]"
+- `model`: "gemini-3.8-flash"
+
+### 4. Refinement & Handoff
+
+1. Address any critical bugs, type issues, or security oversights raised by Gemini.
+2. Present the completed chunk summary, verification results, and Gemini's review status.
+3. **STRICT STOP:** Stop immediately and wait for explicit confirmation before starting the next chunk (e.g., "Start Chunk 2").
+
+---
+
+## Mandatory Chunk-Level Planning Prerequisite
+
+Before implementing ANY planned work chunk (e.g., before "Start Chunk N" is actioned — even when the chunk was already outlined in the feature-level WBS), a chunk-level planning cycle MUST be completed first. If the user says "Start Chunk N" and this cycle has not yet run for that chunk, run it BEFORE any implementation begins.
+
+### 1. Chunk Pre-Planning (Gemini)
+
+Call MCP `ask-gemini` (model: gemini-3.8-flash) with the full current state: what previous chunks landed (committed + verified), the exact files/types/utilities available, and the candidate approach for THIS chunk. Explicitly ask about edge cases, ordering pitfalls, race conditions, error-handling gaps, and open design questions (numbered A/B/C…).
+
+### 2. Refined Chunk Plan
+
+Incorporate Gemini's feedback into a step-numbered chunk plan covering: exact file(s), function signatures, validation layering, error semantics, logging events, and the verification script cases (numbered, with cleanup).
+
+### 3. Plan Critique (Gemini, second call)
+
+Call `ask-gemini` again with the refined chunk plan; resolve every open item and apply confirmed fixes. Do not proceed until Gemini's verdict approves implementation.
+
+### 4. Present & Confirm
+
+Present the finalized chunk plan in scannable form (insights, finalized steps, verification cases) and wait for the user to confirm before writing code. Then follow the existing Chunk Execution & Acting Protocol (isolation → implement → verify → Gemini implementation review → checkpoint commit → STRICT STOP).
+
+---
+
+## Operating Contract
+
+1. No chained `rm` — scratch scripts go to `.tmp/` and stay there.
+2. No `cd` chains — run `pnpm` scripts from the workspace root or use `--filter` when in a monorepo.
+3. No inline `tsx -e` or `node -e` with complex code — always create a file-and-run to avoid terminal expansion issues.
+4. Re-read any file before editing if anything touched it since the last read.
+5. Files <150 lines or >40% edits → whole-file rewrite, no anchored diffs.
+6. **Git checkpoint commits after each verified chunk** — corruption becomes a one-line `git restore` away instead of a reconstruction. Always ask the user if they want to commit the completed chunk before moving to the next.
+7. If corruption ever happens: stop, tell the user to `git restore`, never attempt to blindly patch a corrupted file.
+
+---
+
+## Writing Style: Summaries & Comments
+
+- **Voice & Tone:** Plain English, direct, and conversational. Write like a senior engineer explaining changes to a teammate over Slack, not an academic paper, compiler spec, or formal proof.
+- **Explain Outcomes, Not Micro-Mechanics:** Focus on _what_ broke or changed and _why_. Avoid narrating low-level micro-optimizations, internal variable mechanics, or token guards unless strictly necessary.
+- **Ban Pseudo-Academic Jargon:** Keep explanations concrete and grounded.
+- **No Philosophical Openings:** Cut philosophical or pseudo-theoretical lead-ins. State the problem and solution immediately.
+- **Formatting Standards:**
+  - **Why:** Maximum 2 concise sentences describing the problem and user/system goal.
+  - **What Changed:** High-level bullet points grouped by feature/file area. Use active voice and short sentences.
+  - **Testing:** Quick summary of what was tested and pass status. Avoid listing test file names alongside hyper-dense parenthetical test counts unless requested.
+  - **Notes:** Keep to edge cases, follow-ups, or deployment dependencies.
