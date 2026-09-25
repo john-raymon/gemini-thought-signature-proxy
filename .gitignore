@@ -1,4 +1,7 @@
 node_modules
+dist
+.vitest
+.tmp
 .DS_Store
 tweets.md
 reddit-post.md
