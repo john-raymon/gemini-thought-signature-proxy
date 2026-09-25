@@ -81,6 +81,8 @@ export interface ProxyConfig {
    * "skip_thought_signature_validator" sentinel on a true cache miss.
    */
   shouldPatchModel: (model?: unknown) => boolean;
+  /** Human-readable description of the model filter, for the startup banner. */
+  modelFilterDescription: string;
   cacheMaxEntries: number;
   cacheTtlMs: number;
 }

@@ -56,10 +56,12 @@ function parseBaseUrl(raw: string | undefined): string {
 }
 
 /**
- * Builds the model matcher.
+ * Builds the model matcher plus a human-readable description for the
+ * startup banner.
  *
  * - PATCHED_MODELS set (comma-separated, possibly empty segments): exact match
- *   against normalized IDs.
+ *   against normalized IDs. Sorted in the description so output and tests are
+ *   deterministic.
  * - PATCHED_MODELS set but empty after trimming (e.g. ",,"): falls back to the
  *   default regex — an explicit-but-empty list is almost certainly a mistake.
  * - Unset: /gemini/i so new Gemini drops (3.8-flash, 3.8-pro, ...) work out of
@@ -67,7 +69,10 @@ function parseBaseUrl(raw: string | undefined): string {
  *
  * The returned predicate is total: any non-string input yields false.
  */
-function buildShouldPatchModel(env: NodeJS.ProcessEnv): ProxyConfig["shouldPatchModel"] {
+function buildModelFilter(env: NodeJS.ProcessEnv): {
+  shouldPatchModel: ProxyConfig["shouldPatchModel"];
+  modelFilterDescription: string;
+} {
   const raw = env["PATCHED_MODELS"];
   if (raw !== undefined && raw.trim().length > 0) {
     const ids = new Set(
@@ -77,14 +82,22 @@ function buildShouldPatchModel(env: NodeJS.ProcessEnv): ProxyConfig["shouldPatch
         .filter((segment) => segment.length > 0),
     );
     if (ids.size > 0) {
-      return (model?: unknown) => {
-        if (typeof model !== "string") return false;
-        const normalized = normalizeModelId(model);
-        return normalized.length > 0 && ids.has(normalized);
+      const description = `csv: [${Array.from(ids).sort().join(", ")}]`;
+      return {
+        shouldPatchModel: (model?: unknown) => {
+          if (typeof model !== "string") return false;
+          const normalized = normalizeModelId(model);
+          return normalized.length > 0 && ids.has(normalized);
+        },
+        modelFilterDescription: description,
       };
     }
   }
-  return (model?: unknown) => typeof model === "string" && DEFAULT_MODEL_PATTERN.test(model);
+  return {
+    shouldPatchModel: (model?: unknown) =>
+      typeof model === "string" && DEFAULT_MODEL_PATTERN.test(model),
+    modelFilterDescription: "regex: /gemini/i (default)",
+  };
 }
 
 /**
@@ -92,11 +105,13 @@ function buildShouldPatchModel(env: NodeJS.ProcessEnv): ProxyConfig["shouldPatch
  * from process.env.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ProxyConfig {
+  const { shouldPatchModel, modelFilterDescription } = buildModelFilter(env);
   return {
     port: parsePort(env["PORT"]),
     host: (env["HOST"] ?? "").trim() || DEFAULT_HOST,
     upstreamBaseUrl: parseBaseUrl(env["UPSTREAM_BASE_URL"]),
-    shouldPatchModel: buildShouldPatchModel(env),
+    shouldPatchModel,
+    modelFilterDescription,
     cacheMaxEntries: parsePositiveInt(env["CACHE_MAX_ENTRIES"], DEFAULT_CACHE_MAX_ENTRIES),
     cacheTtlMs: parsePositiveInt(env["CACHE_TTL_MS"], DEFAULT_CACHE_TTL_MS),
   };
