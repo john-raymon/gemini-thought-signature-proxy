@@ -84,14 +84,16 @@ export function createChatCompletionsHandler(
     const isStreamRequest = body?.stream === true && Array.isArray(body.messages);
 
     try {
+      const startedAt = Date.now();
       const patchedBody = patchRequestBody(req.body, cache, config.shouldPatchModel);
       const patched = patchedBody !== req.body;
       const url = resolveChatCompletionsUrl(config.upstreamBaseUrl, req.originalUrl);
       const headers = buildUpstreamHeaders(req.headers);
       headers["content-type"] = "application/json";
 
+      const serialized = JSON.stringify(patchedBody);
       console.log(
-        `[chat] → ${url} model=${(req.body as { model?: unknown } | undefined)?.model} patched=${patched}`,
+        `[chat] ${new Date().toISOString()} → ${url} model=${(req.body as { model?: unknown } | undefined)?.model} stream=${isStreamRequest} patched=${patched} bodyBytes=${serialized.length}`,
       );
 
       if (isStreamRequest) {
@@ -114,13 +116,16 @@ export function createChatCompletionsHandler(
       const upstream = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify(patchedBody),
+        body: serialized,
         signal: ac.signal,
       });
 
       // Upstream headers have arrived — no more heartbeats from here on
       // (they'd interleave with the real chunks).
       clearHeartbeat();
+      console.log(
+        `[chat] ← ${upstream.status} settled in ${Date.now() - startedAt}ms`,
+      );
       if (isStreamRequest) {
         const contentType = upstream.headers.get("content-type") ?? "";
         const isSse = contentType.includes("text/event-stream");
